@@ -2,6 +2,7 @@ import numpy as np
 import pygame as pg
 from tqdm import tqdm
 from itertools import count
+from gym import spaces
 
 W = 1
 H = 2
@@ -37,9 +38,16 @@ FPS = 120
 
 
 class PongSoloEnv:
-    def __init__(self, n_states, actions):
-        self.n_states = n_states
+    def __init__(self):
+        self.n_states = 5
+        actions = [-4, 0, 4]
         self.actions = actions
+
+        self.observation_space = spaces.Box(
+            low=0, high=1, shape=(self.n_states,), dtype=np.float32)
+        self.action_space = spaces.Discrete(3)
+        self.reward_range = range(-10, 11)
+        self.metadata = None
 
         self.reset()
 
@@ -87,7 +95,7 @@ class PongSoloEnv:
         terminal = False
 
         # handle peddle
-        target_pos = self.s[I_X_PED] + a * dt
+        target_pos = self.s[I_X_PED] + self.actions[a] * dt
         if not R_W_PED <= target_pos <= W - R_W_PED:
             target_pos = max(min(W - R_W_PED, target_pos), R_W_PED)
         self.s[I_X_PED] = target_pos
@@ -100,10 +108,10 @@ class PongSoloEnv:
                 target_y = Y_PED + R_H_PED + R_BALL
                 self.s[I_VY_BALL] *= -1
                 self.s[I_VX_BALL] += a
-                r = 200
+                r = 10
             else:
                 terminal = True
-                r = -200
+                r = -10
 
         elif target_y + R_BALL >= H:
             target_y = H - R_BALL
@@ -119,49 +127,7 @@ class PongSoloEnv:
 
         self.s[I_X_BALL] = target_x
 
-        return np.copy(self.s), r, terminal
-
-    def step_training(self, a):
-        r = 0
-        terminal = False
-
-        # handle peddle
-        target_pos = self.s[I_X_PED] + a * dt
-        if not R_W_PED <= target_pos <= W - R_W_PED:
-            target_pos = max(min(W - R_W_PED, target_pos), R_W_PED)
-        self.s[I_X_PED] = target_pos
-
-        # detect y collision
-        target_y = self.s[I_Y_BALL] + self.s[I_VY_BALL] * dt
-        target_x = self.s[I_X_BALL] + self.s[I_VX_BALL] * dt
-        if target_y - R_BALL - R_H_PED <= Y_PED:
-            if abs(target_x - self.s[I_X_PED]) < R_W_PED:
-                target_y = Y_PED + R_H_PED + R_BALL
-                self.s[I_VY_BALL] *= -1
-                self.s[I_VX_BALL] += a
-                self.s[I_VX_BALL] = max(-V_BALL,
-                                        min(self.s[I_VX_BALL], V_BALL))
-                r = 100000
-                terminal = True
-            else:
-                terminal = True
-                r = -100000
-
-        elif target_y + R_BALL >= H:
-            target_y = H - R_BALL
-            self.s[I_VY_BALL] *= -1
-
-        self.s[I_Y_BALL] = target_y
-
-        # handle x collisiton
-        if not R_BALL <= target_x <= W - R_BALL:
-            target_x = max(min(W - R_BALL, target_x), R_BALL)
-            self.s[I_VX_BALL] *= -1
-            self.s[I_VX_BALL] += np.random.uniform(-0.01, 0.01)
-
-        self.s[I_X_BALL] = target_x
-
-        return np.copy(self.s), r, terminal
+        return np.copy(self.s), r, terminal, {}
 
     def init_pg(self):
         pg.init()
@@ -189,16 +155,8 @@ class PongSoloEnv:
 
     def reset(self):
         self.s = self.init_s()
+        self.screen = None
         return self.s
 
-
-n_states = 5
-actions = [-4, 0, 4]
-n_actions = len(actions)
-env = PongSoloEnv(n_states, n_actions)
-
-env.reset()
-while env.render():
-    a = actions[np.random.choice(3)]
-    env.step(a)
-pg.quit()
+    def close(self):
+        pg.quit()
